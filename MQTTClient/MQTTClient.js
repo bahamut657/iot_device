@@ -31,29 +31,33 @@ class MQTTClient {
 
     this.startup();
   }
+
   set_connected(value) {
     if (this.state.connected !== value) {
       this.state.connected = value;
       if (this.state.connected) this.set_connecting(false);
     }
   }
+
   set_connecting(value) {
     if (this.state.connecting !== value) this.state.connecting = value;
   }
+
   clear_timeout({ type }) {
     clearTimeout(this.state.timeout[type]);
   }
+
   set_timeout({ type, cb }) {
     this.clear_timeout({ type });
     this.state.timeout[type] = setTimeout(() => {
       cb();
     }, this.config.timeout[type]);
   }
+
   startup() {
-    const { host, port, username, password } = this.config;
-    this.state.client = mqtt.connect({ host, port }, { username, password });
-    this.sta;
+    console.log("MQTTClient started");
   }
+
   check_connection() {
     return new Promise((resolve, reject) =>
       this.state.connected
@@ -61,10 +65,12 @@ class MQTTClient {
         : this.wait_connection({ resolve, reject })
     );
   }
+
   wait_connection({ resolve, reject }) {
     this.state.queues.onConnect.push({ resolve, reject });
     if (!this.state.connecting) this.connect();
   }
+
   connect() {
     const { host, port, username, password } = this.config;
     this.set_connecting(true);
@@ -113,19 +119,3 @@ class MQTTClient {
   recv({ topic, message }) {}
 }
 module.exports = { MQTTClient };
-
-var client = mqtt.connect("mqtt://test.mosquitto.org");
-
-client.on("connect", function () {
-  client.subscribe("presence", function (err) {
-    if (!err) {
-      client.publish("presence", "Hello mqtt");
-    }
-  });
-});
-
-client.on("message", function (topic, message) {
-  // message is Buffer
-  console.log(message.toString());
-  client.end();
-});
