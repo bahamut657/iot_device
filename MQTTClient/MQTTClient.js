@@ -28,7 +28,6 @@ class MQTTClient {
         idle: null,
       },
     };
-
     this.startup();
   }
 
@@ -72,9 +71,9 @@ class MQTTClient {
   }
 
   connect() {
-    const { host, port, username, password } = this.config;
+    const { host, port, timeout, ...options } = this.config;
     this.set_connecting(true);
-    this.state.client = mqtt.connect({ host, port }, { username, password });
+    this.state.client = mqtt.connect({ host, port }, options);
     this.set_timeout({
       type: "connect",
       cb: () => {
