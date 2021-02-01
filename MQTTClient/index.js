@@ -1,2 +1,3 @@
 const { MQTTClient } = require("./MQTTClient");
-const service = new MQTTClient(JSON.parse(process.env.service_config));
+const config = require("../config/MQTTClient/config");
+const service = new MQTTClient(config);
