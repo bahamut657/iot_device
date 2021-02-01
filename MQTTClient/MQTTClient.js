@@ -1,4 +1,5 @@
 const mqtt = require("mqtt");
+const { MQTTfs } = require("./MQTTfs");
 
 const CONNECTION_TIMEOUT = 5000;
 const IDLE_TIMEOUT = 10000;
@@ -6,14 +7,20 @@ const IDLE_TIMEOUT = 10000;
 class MQTTClient {
   constructor(props) {
     this.config = {
-      host: null,
-      port: null,
-      username: null,
-      password: null,
-      timeout: {
-        connect: CONNECTION_TIMEOUT,
-        idle: IDLE_TIMEOUT,
+      connection: {
+        host: null,
+        port: null,
+        username: null,
+        password: null,
+        timeout: {
+          connect: CONNECTION_TIMEOUT,
+          idle: IDLE_TIMEOUT,
+        },
       },
+      publishInterval: 60,
+      publishfs: null,
+      subscribefs: null,
+      basepath: null,
       ...props,
     };
     this.state = {
@@ -27,8 +34,53 @@ class MQTTClient {
         connect: null,
         idle: null,
       },
+      publishfs: null,
+      subscribefs: null,
     };
     this.startup();
+  }
+
+  startup() {
+    console.log("MQTTClient started");
+    this.fs_start();
+  }
+
+  destroy() {}
+
+  fs_start() {
+    console.log(this.config);
+    if (this.config.publishfs) {
+      this.state.publishfs = new MQTTfs({
+        path: this.config.publishfs,
+        basepath: this.config.basepath,
+      });
+      this.state.publishfs
+        .fs_available_entries()
+        .then((output) => {
+          this.state_publish(ousvitput);
+          console.log(output, "PUBLISHFS");
+        })
+        .catch((e) => console.log(e, "PUBLISHFS"));
+    }
+    if (this.config.subscribefs) {
+      this.state.subscribefs = new MQTTfs({
+        path: this.config.subscribefs,
+        basepath: this.config.basepath,
+      });
+      this.state.subscribefs
+        .fs_available_entries()
+        .then((output) => console.log(output, "SUBSCRIBEFS"))
+        .catch((e) => console.log(e, "SUBSCRIBEFS"));
+    }
+  }
+
+  state_publish({ allPaths, byPath }) {
+    this.exec_publish()
+      .then(() => {})
+      .catch((e) => {})
+      .finally(() => {
+        this.next_state_publish();
+      });
   }
 
   set_connected(value) {
@@ -50,11 +102,7 @@ class MQTTClient {
     this.clear_timeout({ type });
     this.state.timeout[type] = setTimeout(() => {
       cb();
-    }, this.config.timeout[type]);
-  }
-
-  startup() {
-    console.log("MQTTClient started");
+    }, this.config.connection.timeout[type]);
   }
 
   check_connection() {
@@ -71,7 +119,7 @@ class MQTTClient {
   }
 
   connect() {
-    const { host, port, timeout, ...options } = this.config;
+    const { host, port, timeout, ...options } = this.config.connection;
     this.set_connecting(true);
     this.state.client = mqtt.connect({ host, port }, options);
     this.set_timeout({
@@ -80,9 +128,7 @@ class MQTTClient {
         this.set_connecting(false);
         this.state.queues.onConnect.forEach((promise) =>
           promise.reject(
-            new Error(
-              `Timeout connecting MQTT to ${this.config.host}:${this.config.port}`
-            )
+            new Error(`Timeout connecting MQTT to ${host}:${port}`)
           )
         );
         this.state.queues.onConnect = [];
