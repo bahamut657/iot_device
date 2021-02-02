@@ -2,7 +2,7 @@ const os = require("os");
 
 module.exports = {
   connection: {
-    host: "mqtt://<MQTTHOST>",
+    host: "mqtt://madlab-pi.lan",
     username: "<MQTTUSER>",
     password: "<MQTTPWD>",
   },

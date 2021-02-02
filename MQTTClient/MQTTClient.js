@@ -162,7 +162,7 @@ class MQTTClient {
             console.log("PublishFS: Exec error", e);
           });
       });
-      Promise.allSettled(promiseList)
+      this.all_settled({ promiseList })
         .then(() => {
           resolve();
         })
@@ -289,6 +289,16 @@ class MQTTClient {
         metaInfo: { ...byPath[path] },
       });
     }
+  }
+
+  all_settled({ promiseList }) {
+    let wrappedPromises = promiseList.map((p) =>
+      Promise.resolve(p).then(
+        (val) => ({ status: "fulfilled", value: val }),
+        (err) => ({ status: "rejected", reason: err })
+      )
+    );
+    return Promise.all(wrappedPromises);
   }
 }
 module.exports = { MQTTClient };
