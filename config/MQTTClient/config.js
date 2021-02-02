@@ -2,9 +2,9 @@ const os = require("os");
 
 module.exports = {
   connection: {
-    host: "mqtt://madlab-pi.lan",
-    username: "<MQTTUSER>",
-    password: "<MQTTPWD>",
+    host: process.env.IOT_MQTTBROKER,
+    username: process.env.IOT_MQTTUSER || null,
+    password: process.env.IOT_MQTTPWD || null,
   },
   basepath: __dirname,
   publishfs: "/publishfs/",
