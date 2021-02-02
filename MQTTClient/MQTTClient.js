@@ -3,7 +3,7 @@ const { MQTTfs } = require("./MQTTfs");
 const { ProcessSpawner } = require("./ProcessSpawner");
 
 const CONNECTION_TIMEOUT = 5000;
-const IDLE_TIMEOUT = 10000;
+const IDLE_TIMEOUT = 5000;
 const CB_EXEC_TIMEOUT = 10000;
 const PUBLISH_INTERVAL = 30000;
 
@@ -102,13 +102,17 @@ class MQTTClient {
     this.clear_timeout({ type: "idle" });
     this.check_connection()
       .then(() => {
-        allPaths.forEach((filePath) => {
-          console.log(
-            "Subscribing to....",
-            `${mqttPrefix}${deviceName}${filePath}`
-          );
-          this.state.client.subscribe(`${mqttPrefix}${deviceName}${filePath}`);
-        });
+        if (allPaths.length)
+          allPaths.forEach((filePath) => {
+            console.log(
+              "Subscribing to....",
+              `${mqttPrefix}${deviceName}${filePath}`
+            );
+            this.state.client.subscribe(
+              `${mqttPrefix}${deviceName}${filePath}`
+            );
+            this.state.subscribedTopicList.push(filePath);
+          });
       })
       .catch((e) => {
         console.log("SubscribeFS: Error connecting MQTT", e);
@@ -190,6 +194,7 @@ class MQTTClient {
   set_timeout({ type, cb }) {
     this.clear_timeout({ type });
     this.state.timeout[type] = setTimeout(() => {
+      console.log("timeout succedeed", type, cb);
       cb();
     }, this.config.timeout[type]);
   }
@@ -197,6 +202,8 @@ class MQTTClient {
   set_idle_timeout({ cb }) {
     if (!this.state.subscribedTopicList.length) {
       this.set_timeout({ type: "idle", cb });
+    } else {
+      this.clear_timeout({ type: "idle" });
     }
   }
 
