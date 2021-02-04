@@ -12,6 +12,9 @@ module.exports = {
 
   mqttPrefix: "mad-mqtt/",
   deviceName: os.hostname(),
-
   mqttURLSchema: ["PREFIX", "DEVICENAME"],
+  homeAssistant: {
+    mode: "device",
+    prefix: "homeassistant/",
+  },
 };

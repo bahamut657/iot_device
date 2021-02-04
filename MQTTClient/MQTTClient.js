@@ -1,11 +1,15 @@
 const mqtt = require("mqtt");
 const { MQTTfs } = require("./MQTTfs");
 const { ProcessSpawner } = require("./ProcessSpawner");
+const { HADevice } = require("./HADevice");
 
 const CONNECTION_TIMEOUT = 5000;
 const IDLE_TIMEOUT = 5000;
 const CB_EXEC_TIMEOUT = 10000;
 const PUBLISH_INTERVAL = 30000;
+
+const MQTT_DEFAULT_SCHEMA = ["PREFIX", "DEVICENAME"];
+const HA_DEFAULT_PREFIX = "homeassistant/";
 
 class MQTTClient {
   constructor(props) {
@@ -28,6 +32,11 @@ class MQTTClient {
       basepath: null,
       deviceName: null,
       mqttPrefix: "",
+      mqttURLSchema: MQTT_DEFAULT_SCHEMA,
+      homeAssistant: {
+        mode: null,
+        prefix: HA_DEFAULT_PREFIX,
+      },
       ...props,
     };
     this.state = {
@@ -40,9 +49,11 @@ class MQTTClient {
       timeout: {
         connect: null,
         idle: null,
+        publish: null,
       },
       publishfs: null,
       subscribefs: null,
+      homeAssistantDevice: null,
     };
     this.startup();
   }
@@ -51,9 +62,18 @@ class MQTTClient {
     console.log("MQTTClient started");
     this.spawner_start();
     this.fs_start();
+    this.external_integration();
   }
 
-  destroy() {}
+  destroy() {
+    if (this.state.publishfs) this.state.publishfs.destroy();
+    if (this.state.subscribefs) this.state.subscribefs.destroy();
+    for (let timeKey in this.state.timeout)
+      this.clear_timeout({ type: timeKey });
+    if (this.state.connected || this.state.connecting) {
+      this.mqtt_disconnect({ force: true });
+    }
+  }
 
   spawner_start() {
     this.state.spawner = new ProcessSpawner({
@@ -96,23 +116,43 @@ class MQTTClient {
     }
   }
 
+  url_build({ uri }) {
+    const {
+      mqttPrefix = "",
+      deviceName = "",
+      mqttURLSchema = MQTT_DEFAULT_SCHEMA,
+    } = this.config;
+    let url = "";
+    mqttURLSchema.forEach((chunk) => {
+      switch (chunk.toUpperCase()) {
+        case "PREFIX":
+          url += mqttPrefix;
+          break;
+        case "DEVICENAME":
+          url += deviceName;
+          break;
+        default:
+        //not managed - future usage
+      }
+    });
+    url += uri;
+    return url;
+  }
+
   state_subscribe() {
-    const { subscribefs, deviceName, mqttPrefix = "" } = this.config;
+    const { subscribefs } = this.config;
     const { allPaths, byPath } = this.state.subscribefs.get_fs();
     this.clear_timeout({ type: "idle" });
     this.check_connection()
       .then(() => {
-        if (allPaths.length)
+        if (allPaths.length) {
+          const mqttURL = this.url_build({ uri: filePath });
           allPaths.forEach((filePath) => {
-            console.log(
-              "Subscribing to....",
-              `${mqttPrefix}${deviceName}${filePath}`
-            );
-            this.state.client.subscribe(
-              `${mqttPrefix}${deviceName}${filePath}`
-            );
+            console.log("Subscribing to....", `${mqttURL}`);
+            this.state.client.subscribe(`${mqttURL}`);
             this.state.subscribedTopicList.push(filePath);
           });
+        }
       })
       .catch((e) => {
         console.log("SubscribeFS: Error connecting MQTT", e);
@@ -146,6 +186,11 @@ class MQTTClient {
       const promiseList = [];
 
       allPaths.forEach((filePath) => {
+        this.ext_register_path({
+          filePath,
+          definition: byPath[filePath],
+          mode: "publish",
+        });
         const execPromise = this.state.spawner.exec_file({
           filePath: publishfs + filePath + byPath[filePath].extension,
           metaInfo: { ...byPath[filePath] },
@@ -220,9 +265,9 @@ class MQTTClient {
     if (!this.state.connecting) this.connect();
   }
 
-  mqtt_disconnect() {
+  mqtt_disconnect({ force = false }) {
     if (this.state.client) {
-      this.state.client.end();
+      this.state.client.end(force);
       this.state.client = null;
     }
   }
@@ -261,23 +306,17 @@ class MQTTClient {
 
   mqtt_publish({ topic, message = "", qos = 0 }) {
     return new Promise((resolve, reject) => {
-      const { deviceName, mqttPrefix = "" } = this.config;
-
       this.clear_timeout({ type: "idle" });
       this.check_connection()
         .then(() => {
-          this.state.client.publish(
-            `${mqttPrefix}${deviceName}${topic}`,
-            message,
-            { qos },
-            (err) => {
-              this.set_idle_timeout({
-                type: "idle",
-                cb: () => this.mqtt_disconnect(),
-              });
-              return err ? reject(err) : resolve();
-            }
-          );
+          const mqttURL = this.url_build({ uri: topic });
+          this.state.client.publish(mqttURL, message, { qos }, (err) => {
+            this.set_idle_timeout({
+              type: "idle",
+              cb: () => this.mqtt_disconnect(),
+            });
+            return err ? reject(err) : resolve();
+          });
         })
         .catch((e) => {
           console.log("error connecting MQTT server", e);
@@ -306,6 +345,35 @@ class MQTTClient {
       )
     );
     return Promise.all(wrappedPromises);
+  }
+
+  external_integration() {
+    this.ext_home_assistant();
+  }
+
+  ext_home_assistant() {
+    const {
+      deviceName = "",
+      homeAssistant = { mode: null, prefix: HA_DEFAULT_PREFIX },
+    } = this.config;
+    const { mode = null, prefix = HA_DEFAULT_PREFIX } = homeAssistant;
+    const { publish = PUBLISH_INTERVAL } = this.config.timeout;
+    if (mode) {
+      this.state.homeAssistantDevice = new HADevice({
+        mode,
+        prefix,
+        deviceName,
+        publishTimeoutInterval: publish,
+      });
+    }
+  }
+  ext_register_path({ filePath, definition, mode = "publish" }) {
+    if (this.state.homeAssistantDevice) {
+      this.state.homeAssistantDevice.register_endpoint({
+        endPointList: [filePath],
+        mode,
+      });
+    }
   }
 }
 module.exports = { MQTTClient };

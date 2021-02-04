@@ -28,7 +28,15 @@ class MQTTfs {
       .catch((e) => this.fs_error(e));
   }
 
-  destroy() {}
+  destroy() {
+    this.state = {
+      baseFullPath: null,
+      cache: {
+        allPaths: [],
+        byPath: {},
+      },
+    };
+  }
 
   get_fs() {
     return {
