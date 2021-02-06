@@ -16,7 +16,6 @@ class MQTTClient {
     this.config = {
       connection: {
         host: null,
-        port: null,
         username: null,
         password: null,
       },
@@ -71,7 +70,7 @@ class MQTTClient {
     for (let timeKey in this.state.timeout)
       this.clear_timeout({ type: timeKey });
     if (this.state.connected || this.state.connecting) {
-      this.mqtt_disconnect({ force: true });
+      this.mqtt_disconnect(true);
     }
   }
 
@@ -146,8 +145,8 @@ class MQTTClient {
     this.check_connection()
       .then(() => {
         if (allPaths.length) {
-          const mqttURL = this.url_build({ uri: filePath });
           allPaths.forEach((filePath) => {
+            const mqttURL = this.url_build({ uri: filePath });
             console.log("Subscribing to....", `${mqttURL}`);
             this.state.client.subscribe(`${mqttURL}`);
             this.state.subscribedTopicList.push(filePath);
@@ -160,12 +159,16 @@ class MQTTClient {
   }
 
   state_publish() {
+    console.log("inzio publish");
     this.exec_publish()
-      .then(() => {})
+      .then(() => {
+        console.log("publish ok");
+      })
       .catch((e) => {
         console.log("PublishFS: Error during publish", e);
       })
       .finally(() => {
+        console.log("publish next");
         this.next_state_publish();
       });
   }
@@ -174,7 +177,7 @@ class MQTTClient {
     this.set_timeout({
       type: "publish",
       cb: () => {
-        this.exec_publish();
+        this.state_publish();
       },
     });
   }
@@ -200,7 +203,11 @@ class MQTTClient {
           .then(({ exit, stdout, stderr }) => {
             if (!exit) {
               this.mqtt_publish({
-                topic: filePath,
+                topic: this.url_build({ uri: filePath }),
+                message: stdout,
+              });
+              this.ext_publish({
+                filePath,
                 message: stdout,
               });
             } else {
@@ -219,6 +226,15 @@ class MQTTClient {
           reject(e);
         });
     });
+  }
+
+  ext_publish({ filePath, message }) {
+    if (this.state.homeAssistantDevice) {
+      this.state.homeAssistantDevice.update_state({
+        endPoint: filePath,
+        message,
+      });
+    }
   }
 
   set_connected(value) {
@@ -265,7 +281,7 @@ class MQTTClient {
     if (!this.state.connecting) this.connect();
   }
 
-  mqtt_disconnect({ force = false }) {
+  mqtt_disconnect(force = false) {
     if (this.state.client) {
       this.state.client.end(force);
       this.state.client = null;
@@ -273,7 +289,7 @@ class MQTTClient {
   }
 
   connect() {
-    const { host, port, timeout, ...options } = this.config.connection;
+    const { host, timeout, ...options } = this.config.connection;
     this.set_connecting(true);
     this.state.client = mqtt.connect(host, options);
     this.set_timeout({
@@ -281,9 +297,7 @@ class MQTTClient {
       cb: () => {
         this.set_connecting(false);
         this.state.queues.onConnect.forEach((promise) =>
-          promise.reject(
-            new Error(`Timeout connecting MQTT to ${host}:${port}`)
-          )
+          promise.reject(new Error(`Timeout connecting MQTT to ${host}`))
         );
         this.state.queues.onConnect = [];
       },
@@ -309,8 +323,7 @@ class MQTTClient {
       this.clear_timeout({ type: "idle" });
       this.check_connection()
         .then(() => {
-          const mqttURL = this.url_build({ uri: topic });
-          this.state.client.publish(mqttURL, message, { qos }, (err) => {
+          this.state.client.publish(topic, message, { qos }, (err) => {
             this.set_idle_timeout({
               type: "idle",
               cb: () => this.mqtt_disconnect(),
@@ -364,6 +377,13 @@ class MQTTClient {
         prefix,
         deviceName,
         publishTimeoutInterval: publish,
+        cb: {
+          mqttPublish: ({ message, topic }) => {
+            console.log("mqtt to publish from ha", message, topic);
+            this.mqtt_publish({ topic, message });
+          },
+          mqttSubscribe: () => {},
+        },
       });
     }
   }

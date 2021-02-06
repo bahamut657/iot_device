@@ -1,4 +1,4 @@
-const SENSOR_DEFAULT_NAME = "binary_sensor";
+const SENSOR_DEFAULT_NAME = "device_tracker";
 const PUBLISH_INTERVAL = 30000;
 
 class HADevice {
@@ -31,6 +31,7 @@ class HADevice {
   }
 
   startup() {
+    console.log("Nome dispositivo", this.config.deviceName);
     switch (this.config.mode) {
       case "device":
         this.device_config();
@@ -47,7 +48,8 @@ class HADevice {
   normalize_uri({ uri }) {
     const r = new RegExp(" ", "g");
     const r1 = new RegExp("/", "g");
-    return uri.replace(r, "_").replace(r1, "_");
+
+    return uri.replace(r, "_").replace(r1, "_").slice(1);
   }
 
   register_endpoint({ endPointList, mode = "publish" }) {
@@ -64,6 +66,18 @@ class HADevice {
     });
   }
 
+  update_state({ endPoint, message, mode = "publish" }) {
+    const targetURI = this.state.registeredEndPoints[mode].topicByEndPoint[
+      endPoint
+    ];
+    if (targetURI) {
+      this.config.cb.mqttPublish({
+        topic: this.url_build({ uri: targetURI, haEndpoint: "state" }),
+        message,
+      });
+    }
+  }
+
   publish_endpoint_config({ uri }) {
     this.exec_publish_endpoint_config({ uri }).finally(() => {
       clearTimeout(this.state.registeredEndPoints.publish.timerByEndPoint[uri]);
@@ -74,27 +88,35 @@ class HADevice {
         this.config.publishTimeoutInterval
       );
     });
-    const url = this.url_build({
-      uri,
-    });
   }
 
   exec_publish_endpoint_config({ uri }) {
     return new Promise((resolve, reject) => {
-      const url = this.url_build({ uri });
-      const data = {
-        name: "garden1",
-        device_class: "motion",
-        state_topic: "homeassistant/binary_sensor/garden/state",
+      const { deviceName } = this.config;
+      const url = this.url_build({ uri, haEndpoint: "config" });
+      const stateTopic = this.url_build({ uri, haEndpoint: "state" });
+      const r = new RegExp("_", "g");
+      const message = {
+        name: `[${deviceName}] ${uri.replace(r, "/")}`,
+        state_topic: stateTopic,
+        value_template: "",
       };
+      this.config.cb.mqttPublish({
+        message: JSON.stringify(message),
+        topic: url,
+      });
+      resolve();
     });
   }
-  url_build({ uri = "" }) {
+  url_build({ uri = "", haEndpoint = "" }) {
+    const { prefix = "", deviceName = "" } = this.config;
     let url = "";
-    url += this.config.prefix;
-    url += SENSOR_DEFAULT_NAME + "/";
+    url += prefix;
+    url += SENSOR_DEFAULT_NAME;
+    if (deviceName) url += `/${deviceName}`;
+    url += `/${uri}`; //uri = <nodeId>/<objectId> (nodeId e' opzionale)
 
-    url += uri; //uri = <nodeId>/<objectId> (nodeId e' opzionale)
+    if (haEndpoint) url += `/${haEndpoint}`;
     return url;
   }
 }
